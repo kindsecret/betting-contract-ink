@@ -6,6 +6,8 @@ mod betting {
 
     pub type TeamName = Vec<u8>;
 
+    const MIN_DEPOSIT: Balance = 1_000_000_000_000;
+
     #[derive(scale::Encode, scale::Decode)]
     #[cfg_attr(
         feature = "std",
@@ -59,37 +61,80 @@ mod betting {
     /// to add new static storage fields to your contract.
     #[ink(storage)]
     pub struct Betting {
-        /// Stores a single `bool` value on the storage.
-        value: bool,
+        /// Mapping of open matches.
+        matches: Mapping<AccountId, Match>,
+    }
+
+    /// The Betting error types.
+    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum Error {
+        /// The match to be created already exist.
+        MatchAlreadyExists,
+        /// Each account can only have one match open.
+        OriginHasAlreadyOpenMatch,
+        /// The time of the match is over.
+        TimeMatchOver,
+        /// Not enough deposit to create the Match.
+        NotEnoughDeposit,
     }
 
     impl Betting {
         /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
-        pub fn new(init_value: bool) -> Self {
-            Self { value: init_value }
+        pub fn new() -> Self {
+            Self {
+                matches: Default::default(),
+            }
         }
 
-        /// Constructor that initializes the `bool` value to `false`.
-        ///
-        /// Constructors can delegate to other constructors.
-        #[ink(constructor)]
-        pub fn default() -> Self {
-            Self::new(Default::default())
+        // payable accepts a payment (deposit).
+        #[ink(message, payable)]
+        pub fn create_match_to_bet(
+            &mut self,
+            team1: Vec<u8>,
+            team2: Vec<u8>,
+            start: BlockNumber,
+            length: BlockNumber,
+        ) -> Result<(), Error> {
+            let caller = Self::env().caller();
+            // Check account has no open match
+            if self.exists_match(caller) {
+                return Err(Error::OriginHasAlreadyOpenMatch);
+            }
+            // Check if start and length are valid
+            let current_block_number = self.env().block_number();
+            if current_block_number > (start + length) {
+                return Err(Error::TimeMatchOver);
+            }
+            // Check the deposit.
+            // Assert or Error?
+            let deposit = Self::env().transferred_value();
+            assert!(deposit >= MIN_DEPOSIT, "Insufficient deposit");
+
+            // Create the betting match
+            let betting_match = Match {
+                start,
+                length,
+                team1,
+                team2,
+                result: None,
+                bets: Default::default(),
+                deposit,
+            };
+            // Check if match already exists by checking its specs hash.
+            // Store the match hash with its creator account.
+
+            // Store the betting match in the list of open matches
+            self.matches.insert(caller, &betting_match);
+            // Emit an event.
+            Ok(())
         }
 
-        /// A message that can be called on instantiated contracts.
-        /// This one flips the value of the stored `bool` from `true`
-        /// to `false` and vice versa.
+        /// Simply checks if a match exists.
         #[ink(message)]
-        pub fn flip(&mut self) {
-            self.value = !self.value;
-        }
-
-        /// Simply returns the current value of our `bool`.
-        #[ink(message)]
-        pub fn get(&self) -> bool {
-            self.value
+        pub fn exists_match(&self, owner: AccountId) -> bool {
+            self.matches.contains(owner)
         }
     }
 
@@ -98,23 +143,34 @@ mod betting {
     /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
+        // Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
         /// We test if the default constructor does its job.
         #[ink::test]
-        fn default_works() {
-            let betting = Betting::default();
-            assert_eq!(betting.get(), false);
+        fn constructor_works() {
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let betting = Betting::new();
+            assert_eq!(betting.exists_match(accounts.alice), false);
         }
 
-        /// We test a simple use case of our contract.
         #[ink::test]
-        fn it_works() {
-            let mut betting = Betting::new(false);
-            assert_eq!(betting.get(), false);
-            betting.flip();
-            assert_eq!(betting.get(), true);
+        fn create_match_to_bet_works() {
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let mut betting = Betting::new();
+
+            assert_eq!(betting.exists_match(accounts.alice), false);
+
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000000000000);
+
+            betting.create_match_to_bet(
+                "team1".as_bytes().to_vec(),
+                "team2".as_bytes().to_vec(),
+                10,
+                10,
+            );
+            assert_eq!(betting.exists_match(accounts.alice), true);
         }
     }
 
