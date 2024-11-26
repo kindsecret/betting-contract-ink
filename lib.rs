@@ -2,6 +2,57 @@
 
 #[ink::contract]
 mod betting {
+    use ink::storage::Mapping;
+
+    pub type TeamName = Vec<u8>;
+
+    #[derive(scale::Encode, scale::Decode)]
+    #[cfg_attr(
+        feature = "std",
+        derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
+    )]
+    pub enum MatchResult {
+        Team1Wins,
+        Team2Wins,
+        Draw,
+    }
+
+    #[derive(scale::Encode, scale::Decode)]
+    #[cfg_attr(
+        feature = "std",
+        derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
+    )]
+    pub struct Bet {
+        /// Account of the bettor.
+        bettor: AccountId,
+        /// Bet amount.
+        amount: Balance,
+        /// Result predicted.
+        result: MatchResult,
+    }
+
+    #[derive(scale::Encode, scale::Decode)]
+    #[cfg_attr(
+        feature = "std",
+        derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
+    )]
+    pub struct Match {
+        /// Starting block of the match.
+        start: BlockNumber,
+        /// Legnth of the match (start + length = end).
+        length: BlockNumber,
+        /// Team1 name.
+        team1: TeamName,
+        /// Team2 name.
+        team2: TeamName,
+        /// Result.
+        result: Option<MatchResult>,
+        /// List of bets.
+        bets: Vec<Bet>,
+        /// The amount held in reserve of the `depositor`,
+        /// To be returned once this recovery process is closed.
+        deposit: Balance,
+    }
 
     /// Defines the storage of your contract.
     /// Add new fields to the below struct in order
@@ -66,7 +117,6 @@ mod betting {
             assert_eq!(betting.get(), true);
         }
     }
-
 
     /// This is how you'd write end-to-end (E2E) or integration tests for ink! contracts.
     ///
