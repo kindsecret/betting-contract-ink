@@ -65,6 +65,15 @@ mod betting {
         matches: Mapping<AccountId, Match>,
     }
 
+    #[ink(event)]
+    pub struct MatchCreated {
+        #[ink(topic)]
+        who: AccountId,
+        team1: TeamName,
+        team2: TeamName,
+        start: BlockNumber,
+        length: BlockNumber,
+    }
     /// The Betting error types.
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
@@ -80,11 +89,11 @@ mod betting {
     }
 
     impl Betting {
-        /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
         pub fn new() -> Self {
             Self {
                 matches: Default::default(),
+                //matches_hashes: Default::default(),
             }
         }
 
@@ -125,11 +134,20 @@ mod betting {
                 deposit,
             };
             // Check if match already exists by checking its specs hash.
+            // How to create a hash of the object betting_match??
             // Store the match hash with its creator account.
 
             // Store the betting match in the list of open matches
             self.matches.insert(caller, &betting_match);
             // Emit an event.
+            self.env().emit_event(MatchCreated {
+                who: caller,
+                team1: betting_match.team1,
+                team2: betting_match.team2,
+                start,
+                length,
+            });
+
             Ok(())
         }
 
@@ -139,7 +157,6 @@ mod betting {
             self.matches.contains(owner)
         }
     }
-
     /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
     /// module and test functions are marked with a `#[test]` attribute.
     /// The below code is technically just normal Rust code.
@@ -176,6 +193,9 @@ mod betting {
                 Ok(())
             );
             assert_eq!(betting.exists_match(accounts.alice), true);
+
+            let emitted_events = ink::env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
         }
 
         #[ink::test]
