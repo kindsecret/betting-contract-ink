@@ -110,7 +110,9 @@ mod betting {
             // Check the deposit.
             // Assert or Error?
             let deposit = Self::env().transferred_value();
-            assert!(deposit >= MIN_DEPOSIT, "Insufficient deposit");
+            if deposit < MIN_DEPOSIT {
+                return Err(Error::NotEnoughDeposit);
+            }
 
             // Create the betting match
             let betting_match = Match {
@@ -164,13 +166,38 @@ mod betting {
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
             ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000000000000);
 
-            betting.create_match_to_bet(
-                "team1".as_bytes().to_vec(),
-                "team2".as_bytes().to_vec(),
-                10,
-                10,
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    10,
+                    10
+                ),
+                Ok(())
             );
             assert_eq!(betting.exists_match(accounts.alice), true);
+        }
+
+        #[ink::test]
+        fn not_enough_deposit_create_match_to_bet() {
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let mut betting = Betting::new();
+
+            assert_eq!(betting.exists_match(accounts.alice), false);
+
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1);
+
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    10,
+                    10
+                ),
+                Err(Error::NotEnoughDeposit)
+            );
+            assert_eq!(betting.exists_match(accounts.alice), false);
         }
     }
 
