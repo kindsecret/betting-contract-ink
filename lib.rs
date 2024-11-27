@@ -65,6 +65,15 @@ mod betting {
         matches: Mapping<AccountId, Match>,
     }
 
+    #[ink(event)]
+    pub struct MatchCreated {
+        #[ink(topic)]
+        who: AccountId,
+        team1: TeamName,
+        team2: TeamName,
+        start: BlockNumber,
+        length: BlockNumber,
+    }
     /// The Betting error types.
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
@@ -80,11 +89,11 @@ mod betting {
     }
 
     impl Betting {
-        /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
         pub fn new() -> Self {
             Self {
                 matches: Default::default(),
+                //matches_hashes: Default::default(),
             }
         }
 
@@ -110,7 +119,9 @@ mod betting {
             // Check the deposit.
             // Assert or Error?
             let deposit = Self::env().transferred_value();
-            assert!(deposit >= MIN_DEPOSIT, "Insufficient deposit");
+            if deposit < MIN_DEPOSIT {
+                return Err(Error::NotEnoughDeposit);
+            }
 
             // Create the betting match
             let betting_match = Match {
@@ -123,11 +134,20 @@ mod betting {
                 deposit,
             };
             // Check if match already exists by checking its specs hash.
+            // How to create a hash of the object betting_match??
             // Store the match hash with its creator account.
 
             // Store the betting match in the list of open matches
             self.matches.insert(caller, &betting_match);
             // Emit an event.
+            self.env().emit_event(MatchCreated {
+                who: caller,
+                team1: betting_match.team1,
+                team2: betting_match.team2,
+                start,
+                length,
+            });
+
             Ok(())
         }
 
@@ -137,7 +157,6 @@ mod betting {
             self.matches.contains(owner)
         }
     }
-
     /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
     /// module and test functions are marked with a `#[test]` attribute.
     /// The below code is technically just normal Rust code.
@@ -164,13 +183,101 @@ mod betting {
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
             ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000000000000);
 
-            betting.create_match_to_bet(
-                "team1".as_bytes().to_vec(),
-                "team2".as_bytes().to_vec(),
-                10,
-                10,
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    10,
+                    10
+                ),
+                Ok(())
             );
             assert_eq!(betting.exists_match(accounts.alice), true);
+
+            let emitted_events = ink::env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+        }
+
+        #[ink::test]
+        fn not_enough_deposit_when_create_match_to_bet() {
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let mut betting = Betting::new();
+
+            assert_eq!(betting.exists_match(accounts.alice), false);
+
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1);
+
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    10,
+                    10
+                ),
+                Err(Error::NotEnoughDeposit)
+            );
+            assert_eq!(betting.exists_match(accounts.alice), false);
+        }
+
+        #[ink::test]
+        fn match_exist_when_create_match_to_bet() {
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let mut betting = Betting::new();
+
+            assert_eq!(betting.exists_match(accounts.alice), false);
+
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000000000000);
+
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    10,
+                    10
+                ),
+                Ok(())
+            );
+            assert_eq!(betting.exists_match(accounts.alice), true);
+
+            //Try to added it again
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    10,
+                    10
+                ),
+                Err(Error::OriginHasAlreadyOpenMatch)
+            );
+        }
+
+        #[ink::test]
+        fn error_creating_a_match_with_an_open_match() {
+            // Advance 3 blocks
+            ink::env::test::advance_block::<ink::env::DefaultEnvironment>();
+            ink::env::test::advance_block::<ink::env::DefaultEnvironment>();
+            ink::env::test::advance_block::<ink::env::DefaultEnvironment>();
+
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let mut betting = Betting::new();
+
+            assert_eq!(betting.exists_match(accounts.alice), false);
+
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000000000000);
+
+            assert_eq!(
+                betting.create_match_to_bet(
+                    "team1".as_bytes().to_vec(),
+                    "team2".as_bytes().to_vec(),
+                    1,
+                    1
+                ),
+                Err(Error::TimeMatchOver)
+            );
+            assert_eq!(betting.exists_match(accounts.alice), false);
         }
     }
 
