@@ -26,6 +26,10 @@ Build the WebAssembly for the contract:
 cargo +nightly contract build
 ```
 
+## Diagram
+
+![Diagram](./assets/diagram.png)
+
 ## Messages
 
 ### `create_match_to_bet`:
